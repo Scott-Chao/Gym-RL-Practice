@@ -62,7 +62,8 @@ class DQNAgent:
 
         # 计算 Target Q 值
         with torch.no_grad():
-            max_next_q = self.target_net(s_next).max(1)[0].view(-1, 1)
+            best_actions = self.q_net(s_next).argmax(dim=1, keepdim=True)
+            max_next_q = self.target_net(s_next).gather(1, best_actions)
             target_q = r + self.gamma * max_next_q * (1 - done)
 
         criterion = nn.MSELoss()
