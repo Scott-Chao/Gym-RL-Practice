@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 import random
 from collections import deque
+from visualizer import RLVisualizer
 
 class QNet(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -81,6 +82,8 @@ env = gym.make("CartPole-v1")
 agent = DQNAgent(4, 2)
 epsilon = 1.0
 
+viz = RLVisualizer(title="DQN Training Performance")
+
 for ep in range(1000):
     s, _ = env.reset()
     total_r = 0
@@ -98,6 +101,12 @@ for ep in range(1000):
         total_r += r
         if done: break
 
+    viz.add_data(total_r)
+    if ep % 20 == 0:
+        viz.draw()
+
     epsilon = max(0.01, epsilon * 0.99)
     if ep % 50 == 0:
         print(f"Ep: {ep}, Reward: {total_r}, Epsilon: {epsilon:.2f}")
+
+viz.save("dqn_results.png")

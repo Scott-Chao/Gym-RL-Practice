@@ -1,6 +1,7 @@
 import gymnasium as gym
 import numpy as np
 import random
+from visualizer import RLVisualizer
 
 class QLearningAgent:
     def __init__(self, env, bins=(1, 1, 6, 12)):
@@ -53,6 +54,8 @@ class QLearningAgent:
 env = gym.make("CartPole-v1")
 agent = QLearningAgent(env)
 
+viz = RLVisualizer(title="Discrete Q-Learning Training Performance")
+
 for episode in range(2000):
     obs, _ = env.reset()
     state = agent.discretize_state(obs)
@@ -75,10 +78,16 @@ for episode in range(2000):
         
         if done:
             break
+
+    viz.add_data(total_reward)
+    if episode % 20 == 0:
+        viz.draw()
             
     agent.epsilon = max(0.01, agent.epsilon * agent.epsilon_decay)
     
     if (episode + 1) % 100 == 0:
         print(f"Episode: {episode + 1}, Total Reward: {total_reward}, Epsilon: {agent.epsilon:.2f}")
+
+viz.save("discrete_q_learning_results.png")
 
 env.close()
