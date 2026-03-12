@@ -21,10 +21,44 @@ class QNet(nn.Module):
     def forward(self, x):
         return self.fc(x)
 
+class DuelingQNet(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(DuelingQNet, self).__init__()
+
+        # 共享特征提取层
+        self.feature = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU()
+        )
+
+        # 状态价值流 (Value Stream)
+        self.value_stream = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1)
+        )
+
+        # 动作优势流 (Advantage Stream)
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, action_dim)
+        )
+
+    def forward(self, x):
+        features = self.feature(x)
+
+        v = self.value_stream(features)      # Shape: [batch, 1]
+        a = self.advantage_stream(features)  # Shape: [batch, action_dim]
+
+        # Q = V + (A - A.mean)
+        q = v + (a - a.mean(dim=1, keepdim=True))
+        return q
+
 class DQNAgent:
     def __init__(self, state_dim, action_dim):
-        self.q_net = QNet(state_dim, action_dim)
-        self.target_net = QNet(state_dim, action_dim)
+        self.q_net = DuelingQNet(state_dim, action_dim)
+        self.target_net = DuelingQNet(state_dim, action_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=1e-3)
