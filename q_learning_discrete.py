@@ -60,8 +60,12 @@ for episode in range(2000):
     obs, _ = env.reset()
     state = agent.discretize_state(obs)
     total_reward = 0
+    q_sum = 0.0
+    q_count = 0
     
     while True:
+        q_sum += float(np.max(agent.q_table[state]))
+        q_count += 1
         action = agent.choose_action(state)
         next_obs, reward, terminated, truncated, _ = env.step(action)
         next_state = agent.discretize_state(next_obs)
@@ -79,14 +83,15 @@ for episode in range(2000):
         if done:
             break
 
-    viz.add_data(total_reward)
+    avg_q = (q_sum / q_count) if q_count else float("nan")
+    viz.add_data(total_reward, avg_q=avg_q)
     if episode % 20 == 0:
         viz.draw()
             
     agent.epsilon = max(0.01, agent.epsilon * agent.epsilon_decay)
     
     if (episode + 1) % 100 == 0:
-        print(f"Episode: {episode + 1}, Total Reward: {total_reward}, Epsilon: {agent.epsilon:.2f}")
+        print(f"Episode: {episode + 1}, Total Reward: {total_reward}, AvgQ: {avg_q:.2f}, Epsilon: {agent.epsilon:.2f}")
 
 viz.save("discrete_q_learning_results.png")
 

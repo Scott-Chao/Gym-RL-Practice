@@ -44,7 +44,7 @@ class DQNAgent:
         self.memory.append((s, a, r, s_next, done))
 
     def train(self):
-        if len(self.memory) < self.batch_size: return
+        if len(self.memory) < self.batch_size: return 0.0
 
         # 随机采样
         batch = random.sample(self.memory, self.batch_size)
@@ -58,6 +58,7 @@ class DQNAgent:
 
         # 当前 Q 值：通过主网络计算当前状态下采取动作 a 的价值
         q_values = self.q_net(s).gather(1, a)
+        avg_q = q_values.mean().item()
 
         # 计算 Target Q 值
         with torch.no_grad():
@@ -72,6 +73,7 @@ class DQNAgent:
         self.optimizer.step()
 
         self.update_target()
+        return avg_q
 
     def update_target(self, tau=0.005):
         for target_param, local_param in zip(self.target_net.parameters(), self.q_net.parameters()):
@@ -87,26 +89,37 @@ viz = RLVisualizer(title="DQN Training Performance")
 for ep in range(1000):
     s, _ = env.reset()
     total_r = 0
+    q_sum = 0.0
+    q_count = 0
     while True:
         a = agent.choose_action(s, epsilon)
+        with torch.no_grad():
+            state_t = torch.FloatTensor(s).unsqueeze(0)
+            q_sum += agent.q_net(state_t).max(1)[0].item()
+            q_count += 1
         s_next, r, terminated, truncated, _ = env.step(a)
         done = terminated or truncated
 
         modified_r = r if not terminated else -10
 
         agent.store(s, a, modified_r, s_next, done)
-        agent.train()
+
+        q_val = agent.train()
+        if q_val > 0:
+            q_sum += q_val
+            q_count += 1
 
         s = s_next
         total_r += r
         if done: break
 
-    viz.add_data(total_r)
+    avg_q = (q_sum / q_count) if q_count else float("nan")
+    viz.add_data(total_r, avg_q=avg_q)
     if ep % 20 == 0:
         viz.draw()
 
     epsilon = max(0.01, epsilon * 0.99)
     if ep % 50 == 0:
-        print(f"Ep: {ep}, Reward: {total_r}, Epsilon: {epsilon:.2f}")
+        print(f"Ep: {ep}, Reward: {total_r}, AvgQ: {avg_q:.2f}, Epsilon: {epsilon:.2f}")
 
 viz.save("dqn_results.png")
