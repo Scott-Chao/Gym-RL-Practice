@@ -4,8 +4,9 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import random
-from collections import deque
 from visualizer import RLVisualizer
+
+torch.set_num_threads(4)
 
 class QNet(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -55,6 +56,39 @@ class DuelingQNet(nn.Module):
         q = v + (a - a.mean(dim=1, keepdim=True))
         return q
 
+class ReplayBuffer:
+    def __init__(self, capacity, state_dim):
+        self.capacity = capacity
+        self.ptr = 0
+        self.size = 0
+
+        self.states = np.zeros((capacity, state_dim), dtype=np.float32)
+        self.actions = np.zeros((capacity, 1), dtype=np.int64)
+        self.rewards = np.zeros((capacity, 1), dtype=np.float32)
+        self.next_states = np.zeros((capacity, state_dim), dtype=np.float32)
+        self.dones = np.zeros((capacity, 1), dtype=np.float32)
+
+    def add(self, state, action, reward, next_state, done):
+        self.states[self.ptr] = state
+        self.actions[self.ptr] = action
+        self.rewards[self.ptr] = reward
+        self.next_states[self.ptr] = next_state
+        self.dones[self.ptr] = done
+
+        self.ptr = (self.ptr + 1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
+
+    def sample(self, batch_size):
+        idx = np.random.randint(0, self.size, size=batch_size)
+
+        return (
+            torch.FloatTensor(self.states[idx]),
+            torch.LongTensor(self.actions[idx]),
+            torch.FloatTensor(self.rewards[idx]),
+            torch.FloatTensor(self.next_states[idx]),
+            torch.FloatTensor(self.dones[idx])
+        )
+
 class DQNAgent:
     def __init__(self, state_dim, action_dim):
         self.q_net = DuelingQNet(state_dim, action_dim)
@@ -62,7 +96,7 @@ class DQNAgent:
         self.target_net.load_state_dict(self.q_net.state_dict())
 
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=1e-3)
-        self.memory = deque(maxlen=10000)
+        self.memory = ReplayBuffer(10000, state_dim)
         self.gamma = 0.99
         self.batch_size = 64
         self.action_dim = action_dim
@@ -70,27 +104,20 @@ class DQNAgent:
     def choose_action(self, state, epsilon):
         if random.random() < epsilon:
             return random.randint(0, self.action_dim - 1)
-        state = torch.FloatTensor(state).unsqueeze(0)
+        state_t = torch.FloatTensor(state).unsqueeze(0)
         with torch.no_grad():
-            return self.q_net(state).argmax().item()
+            return self.q_net(state_t).argmax().item()
 
     def store(self, s, a, r, s_next, done):
-        self.memory.append((s, a, r, s_next, done))
+        self.memory.add(s, a, r, s_next, done)
 
     def train(self):
-        if len(self.memory) < self.batch_size: return 0.0
+        if self.memory.size < self.batch_size:
+            return 0.0
 
-        # 随机采样
-        batch = random.sample(self.memory, self.batch_size)
-        s, a, r, s_next, done = zip(*batch)
+        s, a, r, s_next, done = self.memory.sample(self.batch_size)
 
-        s = torch.FloatTensor(np.array(s))
-        a = torch.LongTensor(a).view(-1, 1)
-        r = torch.FloatTensor(r).view(-1, 1)
-        s_next = torch.FloatTensor(np.array(s_next))
-        done = torch.FloatTensor(done).view(-1, 1)
-
-        # 当前 Q 值：通过主网络计算当前状态下采取动作 a 的价值
+        # 预测当前 Q 值
         q_values = self.q_net(s).gather(1, a)
         avg_q = q_values.mean().item()
 
@@ -126,12 +153,9 @@ for ep in range(1000):
     total_r = 0
     q_sum = 0.0
     q_count = 0
+
     while True:
         a = agent.choose_action(s, epsilon)
-        with torch.no_grad():
-            state_t = torch.FloatTensor(s).unsqueeze(0)
-            q_sum += agent.q_net(state_t).max(1)[0].item()
-            q_count += 1
         s_next, r, terminated, truncated, _ = env.step(a)
 
         modified_r = r if not terminated else -10
@@ -139,6 +163,7 @@ for ep in range(1000):
         agent.store(s, a, modified_r, s_next, terminated)
 
         q_val = agent.train()
+
         if q_val > 0:
             q_sum += q_val
             q_count += 1
@@ -150,11 +175,14 @@ for ep in range(1000):
 
     avg_q = (q_sum / q_count) if q_count else float("nan")
     viz.add_data(total_r, avg_q=avg_q)
+
     if ep % 20 == 0:
         viz.draw()
 
     epsilon = max(0.01, epsilon * 0.99)
+
     if ep % 50 == 0:
         print(f"Ep: {ep}, Reward: {total_r}, AvgQ: {avg_q:.2f}, Epsilon: {epsilon:.2f}")
 
 viz.save("dqn_results.png")
+env.close()
