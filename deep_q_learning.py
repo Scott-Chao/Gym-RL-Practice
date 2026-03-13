@@ -142,8 +142,8 @@ class DQNAgent:
             target_param.data.copy_(tau * local_param.data + (1.0 - tau) * target_param.data)
 
 # 训练主循环
-env = gym.make("CartPole-v1")
-agent = DQNAgent(4, 2)
+env = gym.make("LunarLander-v3")
+agent = DQNAgent(env.observation_space.shape[0], env.action_space.n)
 epsilon = 1.0
 min_epsilon = 0.05
 epsilon_decay = 0.99
@@ -160,9 +160,7 @@ for ep in range(1000):
         a = agent.choose_action(s, epsilon)
         s_next, r, terminated, truncated, _ = env.step(a)
 
-        modified_r = r if not terminated else -10
-
-        agent.store(s, a, modified_r, s_next, terminated)
+        agent.store(s, a, r, s_next, terminated)
 
         q_val = agent.train()
 
