@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 import random
 import argparse
+from collections import deque
 from pathlib import Path
 from visualizer import RLVisualizer
 
@@ -174,6 +175,29 @@ class PrioritizedReplayBuffer:
 
         self.max_priority = max(self.max_priority, np.max(priorities))
 
+class NStepBuffer:
+    def __init__(self, n, gamma):
+        self.n = n
+        self.gamma = gamma
+        self.buffer = deque(maxlen=n)
+
+    def add(self, s, a, r, s_next, done):
+        self.buffer.append((s, a, r, s_next, done))
+        if len(self.buffer) < self.n:
+            return None
+
+        # 计算 n-step return
+        # G = r0 + g*r1 + g^2*r2...
+        reward = 0
+        for i, exp in enumerate(self.buffer):
+            reward += (self.gamma ** i) * exp[2]
+
+        # 取第 0 步的状态动作，和第 n 步的下一个状态
+        state, action, _, _, _ = self.buffer[0]
+        _, _, _, next_state, done = self.buffer[-1]
+
+        return state, action, reward, next_state, done
+
 class DQNAgent:
     def __init__(self, state_dim, action_dim):
         self.q_net = DuelingQNet(state_dim, action_dim)
@@ -185,6 +209,8 @@ class DQNAgent:
         self.gamma = 0.99
         self.batch_size = 128
         self.action_dim = action_dim
+
+        self.n_step = 3
 
     def choose_action(self, state, epsilon):
         if random.random() < epsilon:
@@ -210,7 +236,7 @@ class DQNAgent:
         with torch.no_grad():
             best_actions = self.q_net(s_next).argmax(dim=1, keepdim=True)
             max_next_q = self.target_net(s_next).gather(1, best_actions)
-            target_q = r + self.gamma * max_next_q * (1 - done)
+            target_q = r + (self.gamma ** self.n_step) * max_next_q * (1 - done)
 
         diff = q_values - target_q
 
@@ -260,6 +286,10 @@ def run_train():
 
     best_reward = -np.inf
 
+    n_step_n = 3
+    n_step_gamma = 0.99
+    n_buffer = NStepBuffer(n_step_n, n_step_gamma)
+
     for ep in range(1000):
         s, _ = env.reset()
         total_r = 0
@@ -270,7 +300,9 @@ def run_train():
             a = agent.choose_action(s, epsilon)
             s_next, r, terminated, truncated, _ = env.step(a)
 
-            agent.store(s, a, r, s_next, terminated)
+            n_step_data = n_buffer.add(s, a, r, s_next, terminated)
+            if n_step_data:
+                agent.store(*n_step_data)
 
             q_val = agent.train()
 
@@ -281,6 +313,8 @@ def run_train():
             s = s_next
             total_r += r
             if terminated or truncated:
+                while len(n_buffer.buffer) > 0:
+                    n_buffer.buffer.popleft()
                 break
 
         avg_q = (q_sum / q_count) if q_count else float("nan")
