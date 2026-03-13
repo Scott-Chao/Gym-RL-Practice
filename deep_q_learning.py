@@ -98,11 +98,10 @@ for ep in range(1000):
             q_sum += agent.q_net(state_t).max(1)[0].item()
             q_count += 1
         s_next, r, terminated, truncated, _ = env.step(a)
-        done = terminated or truncated
 
         modified_r = r if not terminated else -10
 
-        agent.store(s, a, modified_r, s_next, done)
+        agent.store(s, a, modified_r, s_next, terminated)
 
         q_val = agent.train()
         if q_val > 0:
@@ -111,7 +110,8 @@ for ep in range(1000):
 
         s = s_next
         total_r += r
-        if done: break
+        if terminated or truncated:
+            break
 
     avg_q = (q_sum / q_count) if q_count else float("nan")
     viz.add_data(total_r, avg_q=avg_q)
