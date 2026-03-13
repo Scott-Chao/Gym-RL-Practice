@@ -1,14 +1,13 @@
-import gymnasium as gym
 import numpy as np
 import random
-from visualizer import RLVisualizer
 
-class QLearningAgent:
+
+class DiscreteAgent:
     def __init__(self, env, bins=(1, 1, 6, 12)):
         self.env = env
         self.bins = bins
         self.action_size = env.action_space.n
-        
+
         # 定义每个维度的观测边界
         self.state_bounds = list(zip(env.observation_space.low, env.observation_space.high))
         self.state_bounds[1] = [-3.0, 3.0]  # 修正速度边界
@@ -16,10 +15,10 @@ class QLearningAgent:
 
         # 初始化 Q-Table
         self.q_table = np.zeros(self.bins + (self.action_size,))
-        
+
         # 超参数
-        self.alpha = 0.1    # 学习率
-        self.gamma = 0.95   # 折扣因子
+        self.alpha = 0.1  # 学习率
+        self.gamma = 0.95  # 折扣因子
         self.epsilon = 1.0  # 探索率
         self.epsilon_decay = 0.995
 
@@ -36,11 +35,12 @@ class QLearningAgent:
             discretized.append(index)
         return tuple(discretized)
 
-    def choose_action(self, state):
+    def choose_action(self, state, epsilon=None):
         """epsilon-greedy 策略"""
-        if random.uniform(0, 1) < self.epsilon:
+        eps = epsilon if epsilon is not None else self.epsilon
+        if random.uniform(0, 1) < eps:
             return self.env.action_space.sample()
-        return np.argmax(self.q_table[state])
+        return int(np.argmax(self.q_table[state]))
 
     def learn(self, state, action, reward, next_state, done):
         """Q-Learning 更新公式"""
@@ -51,48 +51,10 @@ class QLearningAgent:
         new_value = old_value + self.alpha * (reward + self.gamma * next_max - old_value)
         self.q_table[state][action] = new_value
 
-env = gym.make("CartPole-v1")
-agent = QLearningAgent(env)
+    def save(self, path):
+        """保存 Q-Table 为 numpy 文件"""
+        np.save(path, self.q_table)
 
-viz = RLVisualizer(title="Discrete Q-Learning Training Performance")
-
-for episode in range(2000):
-    obs, _ = env.reset()
-    state = agent.discretize_state(obs)
-    total_reward = 0
-    q_sum = 0.0
-    q_count = 0
-    
-    while True:
-        q_sum += float(np.max(agent.q_table[state]))
-        q_count += 1
-        action = agent.choose_action(state)
-        next_obs, reward, terminated, truncated, _ = env.step(action)
-        next_state = agent.discretize_state(next_obs)
-        
-        done = terminated or truncated
-        
-        # 如果杆子倒了，给予惩罚以加速收敛
-        actual_reward = reward if not terminated else -100
-        
-        agent.learn(state, action, actual_reward, next_state, done)
-        
-        state = next_state
-        total_reward += reward
-        
-        if done:
-            break
-
-    avg_q = (q_sum / q_count) if q_count else float("nan")
-    viz.add_data(total_reward, avg_q=avg_q)
-    if episode % 20 == 0:
-        viz.draw()
-            
-    agent.epsilon = max(0.01, agent.epsilon * agent.epsilon_decay)
-    
-    if (episode + 1) % 100 == 0:
-        print(f"Episode: {episode + 1}, Total Reward: {total_reward}, AvgQ: {avg_q:.2f}, Epsilon: {agent.epsilon:.2f}")
-
-viz.save("discrete_q_learning_results.png")
-
-env.close()
+    def load(self, path):
+        """加载已保存的 Q-Table"""
+        self.q_table = np.load(path)

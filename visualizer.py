@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
+
 class RLVisualizer:
     def __init__(self, title):
         self.rewards = []
