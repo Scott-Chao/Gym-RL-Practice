@@ -95,10 +95,10 @@ class DQNAgent:
         self.target_net = DuelingQNet(state_dim, action_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=1e-3)
-        self.memory = ReplayBuffer(10000, state_dim)
+        self.optimizer = optim.Adam(self.q_net.parameters(), lr=1e-4)
+        self.memory = ReplayBuffer(100000, state_dim)
         self.gamma = 0.99
-        self.batch_size = 64
+        self.batch_size = 128
         self.action_dim = action_dim
 
     def choose_action(self, state, epsilon):
@@ -145,6 +145,8 @@ class DQNAgent:
 env = gym.make("CartPole-v1")
 agent = DQNAgent(4, 2)
 epsilon = 1.0
+min_epsilon = 0.05
+epsilon_decay = 0.99
 
 viz = RLVisualizer(title="DQN Training Performance")
 
@@ -179,7 +181,7 @@ for ep in range(1000):
     if ep % 20 == 0:
         viz.draw()
 
-    epsilon = max(0.01, epsilon * 0.99)
+    epsilon = max(min_epsilon, epsilon * epsilon_decay)
 
     if ep % 50 == 0:
         print(f"Ep: {ep}, Reward: {total_r}, AvgQ: {avg_q:.2f}, Epsilon: {epsilon:.2f}")
