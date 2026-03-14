@@ -15,21 +15,21 @@ MODEL_PATH = Path(MODEL_DIR) / "best_lunar_lander.pth"
 if not MODEL_PATH.parent.exists():
     MODEL_PATH.parent.mkdir(parents=True)
 
+n_step_n = 3
+n_step_gamma = 0.99
+epsilon = 1.0
+min_epsilon = 0.05
+epsilon_decay = 0.99
 
 def run_train():
     env = gym.make("LunarLander-v3")
-    agent = DQNAgent(env.observation_space.shape[0], env.action_space.n)
-    epsilon = 1.0
-    min_epsilon = 0.05
-    epsilon_decay = 0.99
+
+    n_buffer = NStepBuffer(n_step_n, n_step_gamma)
+    agent = DQNAgent(env.observation_space.shape[0], env.action_space.n, n_step_n)
 
     viz = RLVisualizer(title="DQN Training Performance")
 
     best_reward = -np.inf
-
-    n_step_n = 3
-    n_step_gamma = 0.99
-    n_buffer = NStepBuffer(n_step_n, n_step_gamma)
 
     for ep in range(1000):
         s, _ = env.reset()
@@ -53,11 +53,17 @@ def run_train():
 
             s = s_next
             total_r += r
-            if terminated or truncated:
+
+            if terminated:
+                if len(n_buffer.buffer) == n_step_n:
+                    n_buffer.buffer.popleft()
                 while len(n_buffer.buffer) > 0:
                     n_step_data = n_buffer.get_n_step_info()
                     agent.store(*n_step_data)
                     n_buffer.buffer.popleft()
+                break
+            if truncated:
+                n_buffer.buffer.clear()
                 break
 
         avg_q = (q_sum / q_count) if q_count else float("nan")
@@ -78,7 +84,7 @@ def run_train():
 
 def run_test():
     env = gym.make("LunarLander-v3", render_mode="human")
-    agent = DQNAgent(env.observation_space.shape[0], env.action_space.n)
+    agent = DQNAgent(env.observation_space.shape[0], env.action_space.n, n_step_n)
 
     if MODEL_PATH.exists():
         print(f"Loading model from {MODEL_PATH}...")
