@@ -89,7 +89,7 @@ class SumTree:
 
 
 class PrioritizedReplayBuffer:
-    def __init__(self, capacity, state_dim, device, alpha=0.6, beta=0.4, beta_increment=0.001):
+    def __init__(self, capacity, state_dim, device, alpha=0.6, beta=0.4, beta_increment=1e-5):
         self.device = device
 
         self.capacity = capacity
@@ -193,7 +193,7 @@ class NStepBuffer:
 
 
 class DQNAgent:
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim, action_dim, n_step):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.q_net = DuelingQNet(state_dim, action_dim).to(self.device)
@@ -209,7 +209,7 @@ class DQNAgent:
         self.batch_size = 128
         self.action_dim = action_dim
 
-        self.n_step = 3
+        self.n_step = n_step
 
     def choose_action(self, state, epsilon):
         if random.random() < epsilon:
