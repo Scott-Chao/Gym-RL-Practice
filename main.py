@@ -47,7 +47,7 @@ def run_train():
 
             q_val = agent.train()
 
-            if q_val > 0:
+            if q_val is not None:
                 q_sum += q_val
                 q_count += 1
 
@@ -55,6 +55,8 @@ def run_train():
             total_r += r
             if terminated or truncated:
                 while len(n_buffer.buffer) > 0:
+                    n_step_data = n_buffer.get_n_step_info()
+                    agent.store(*n_step_data)
                     n_buffer.buffer.popleft()
                 break
 

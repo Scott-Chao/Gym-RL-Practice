@@ -178,6 +178,14 @@ class NStepBuffer:
 
         return state, action, reward, next_state, done
 
+    def get_n_step_info(self):
+        reward = 0
+        for i, exp in enumerate(self.buffer):
+            reward += (self.gamma**i) * exp[2]
+        state, action, _, _, _ = self.buffer[0]
+        _, _, _, next_state, done = self.buffer[-1]
+        return state, action, reward, next_state, done
+
 
 class DQNAgent:
     def __init__(self, state_dim, action_dim):
@@ -205,7 +213,7 @@ class DQNAgent:
 
     def train(self):
         if self.memory.size < self.batch_size:
-            return 0.0
+            return None
 
         s, a, r, s_next, done, tree_indices, weights = self.memory.sample(self.batch_size)
 
