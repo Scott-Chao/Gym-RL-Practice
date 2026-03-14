@@ -89,7 +89,9 @@ class SumTree:
 
 
 class PrioritizedReplayBuffer:
-    def __init__(self, capacity, state_dim, alpha=0.6, beta=0.4, beta_increment=0.001):
+    def __init__(self, capacity, state_dim, device, alpha=0.6, beta=0.4, beta_increment=0.001):
+        self.device = device
+
         self.capacity = capacity
         self.ptr = 0
         self.size = 0
@@ -101,18 +103,18 @@ class PrioritizedReplayBuffer:
 
         self.max_priority = 1.0
 
-        self.states = np.zeros((capacity, state_dim), dtype=np.float32)
-        self.actions = np.zeros((capacity, 1), dtype=np.int64)
-        self.rewards = np.zeros((capacity, 1), dtype=np.float32)
-        self.next_states = np.zeros((capacity, state_dim), dtype=np.float32)
-        self.dones = np.zeros((capacity, 1), dtype=np.float32)
+        self.states = torch.zeros((capacity, state_dim), dtype=torch.float32, device=self.device)
+        self.actions = torch.zeros((capacity, 1), dtype=torch.int64, device=self.device)
+        self.rewards = torch.zeros((capacity, 1), dtype=torch.float32, device=self.device)
+        self.next_states = torch.zeros((capacity, state_dim), dtype=torch.float32, device=self.device)
+        self.dones = torch.zeros((capacity, 1), dtype=torch.float32, device=self.device)
 
     def add(self, state, action, reward, next_state, done):
-        self.states[self.ptr] = state
-        self.actions[self.ptr] = action
-        self.rewards[self.ptr] = reward
-        self.next_states[self.ptr] = next_state
-        self.dones[self.ptr] = done
+        self.states[self.ptr] = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+        self.actions[self.ptr] = torch.tensor([action], dtype=torch.int64, device=self.device)
+        self.rewards[self.ptr] = torch.tensor([reward], dtype=torch.float32, device=self.device)
+        self.next_states[self.ptr] = torch.as_tensor(next_state, dtype=torch.float32, device=self.device)
+        self.dones[self.ptr] = torch.tensor([done], dtype=torch.float32, device=self.device)
 
         self.tree.add(self.max_priority)
         self.ptr = (self.ptr + 1) % self.capacity
@@ -136,14 +138,17 @@ class PrioritizedReplayBuffer:
         weights = (self.size * probs) ** (-self.beta)
         weights /= weights.max()
 
+        indices_tensor = torch.tensor(indices, dtype=torch.long, device=self.device)
+        weights_tensor = torch.tensor(weights, dtype=torch.float32, device=self.device).view(-1, 1)
+
         return (
-            torch.FloatTensor(self.states[indices]),
-            torch.LongTensor(self.actions[indices]),
-            torch.FloatTensor(self.rewards[indices]),
-            torch.FloatTensor(self.next_states[indices]),
-            torch.FloatTensor(self.dones[indices]),
+            self.states[indices_tensor],
+            self.actions[indices_tensor],
+            self.rewards[indices_tensor],
+            self.next_states[indices_tensor],
+            self.dones[indices_tensor],
             tree_indices,
-            torch.FloatTensor(weights).view(-1, 1),
+            weights_tensor,
         )
 
     def update_priorities(self, tree_indices, td_errors):
@@ -189,12 +194,17 @@ class NStepBuffer:
 
 class DQNAgent:
     def __init__(self, state_dim, action_dim):
-        self.q_net = DuelingQNet(state_dim, action_dim)
-        self.target_net = DuelingQNet(state_dim, action_dim)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.q_net = DuelingQNet(state_dim, action_dim).to(self.device)
+        self.target_net = DuelingQNet(state_dim, action_dim).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
+        self.q_net = torch.compile(self.q_net)
+        self.target_net = torch.compile(self.target_net)
+
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=1e-4)
-        self.memory = PrioritizedReplayBuffer(100000, state_dim)
+        self.memory = PrioritizedReplayBuffer(100000, state_dim, device=self.device)
         self.gamma = 0.99
         self.batch_size = 128
         self.action_dim = action_dim
@@ -204,7 +214,7 @@ class DQNAgent:
     def choose_action(self, state, epsilon):
         if random.random() < epsilon:
             return random.randint(0, self.action_dim - 1)
-        state_t = torch.FloatTensor(state).unsqueeze(0)
+        state_t = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         with torch.no_grad():
             return self.q_net(state_t).argmax().item()
 
